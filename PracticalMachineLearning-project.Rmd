@@ -1,0 +1,110 @@
+---
+title: "Practical Machine Learning course project"
+author: "Diego Gozalo Torres"
+output: html_document
+---
+
+Due to some characteristics of the project and the data, explained later on, I have tried prediction models in 2 different approaches
+
+**REAL PROBLEM APPROACH: Models 1- and 2-**
+
+Assuming the given data codifies/describes the executed movement, of all kinds (right and wrongs) by one of the individuals ("users" from now on), in order to approximate to the real problem, it makes sense to **test the model on one (or more) of the users, not used in the training set**. So I create the **Train/Test by username.** 
+
+* CLEANING DATA:  3 differente error data: "","DIV/0","NA")
+
+* PREDICTION SELECTION:
+    + I take out variables with less than 10% of cases
+    + I take out variables not related with movement description, this is, not from sensors
+
+```{r eval=FALSE}
+dat=replace(dat, dat=="", NA)
+dat=replace(dat, dat=="#DIV/0!", NA)
+# out columns almost full of NAs
+na_count <-sapply(dat, function(y) sum(is.na(y))/length(y))
+dat=dat[,names(na_count[na_count<0.9])]
+
+dat=dat[,-1]
+dat=dat[,-c(2:6)]
+```
+
+* MODEL TRAINING/TEST: BY USER
+
+```{r eval=FALSE}
+table(data.frame(dat$user_name,dat$classe))
+users4testing=c("pedro")
+trainingwithuser=dat[!dat$user_name %in% users4testing,]
+testingwithuser=dat[dat$user_name %in% users4testing,]
+
+#take out user because I use for test and gives error at finding a new value
+training=trainingwithuser[,-1]
+testing=testingwithuser[,-1]
+```
+
+* MODEL BUILDING
+
+**Model tried: random forest, because it's a classic that gives good results**
+
+1-Model **First try, default RF, with 10 repetitions** (for reducing computation time)
+
+```{r eval=FALSE}
+trainctrl <- trainControl(number=10, verboseIter = TRUE)
+modfitRF=train(classe~.,data=training,method='rf', trControl = trainctrl) 
+```
+
+2-Model **RF with cross validation. Besides, due to the nature of the problem, I adjust the folds of the CV to the users**
+
+```{r eval=FALSE}
+usersindices =lapply(unique(trainingwithuser$user_name), function(x) which(trainingwithuser$user_name==x))
+numbr=length(unique(trainingwithuser$user_name))
+trainctrl <- trainControl(method="cv",number=numbr,indexOut=usersindices,  allowParallel=TRUE, verboseIter = TRUE)
+modfitRF=train(classe~.,data=training,method='rf', trControl = trainctrl) 
+```
+
+In boths cases the accuracy in the test set, that is, *the expected out of sample error* is quite poor:
+
+```{r eval=FALSE}
+predtestRF=predict(modfitRF,testing)
+confusionMatrix(predtestRF,as.factor(testing$classe))
+```
+
+*1-Model* RF, with 10 repetitions: Accuracy : 0.2398
+
+*2-Model* RF with cross validation on user_name: Accuracy : 0.2636
+
+This is the accuracy we would get **if we tried to predict a new unknown user.** But, that is not the case.
+
+This is due to the fact that the whole problem is badly designed. The real predictors shoud be the summary data of every window, (new window = yes), not every one of the data from the sensors (several per second). How could the system differentiate between two similar measures of rolling up the arm, when one movement finishes correctly and the other stops at half way (one of the mistake classes)
+Besides, the final test data are just data extracted from the whole study data, they are data from the same users.
+This has been already (better) explained in the forum
+
+https://www.coursera.org/learn/practical-machine-learning/discussions/weeks/4/threads/7dTPsA6sEeehWA5dKEw6YA
+
+So, the data provided are **consecutive inmediate registrys of the sensors** (temporal series), so **every one is very similar to the nearest ones.** If the **training and test sets are established aleatoryly,** all the data in test set have similar data in training set, so the model will work perfectly. Final test set will be like the training set, and accuracy will be almost the same.
+  
+* MODEL TRAINING/TEST: ALEATORY
+
+```{r eval=FALSE}
+intrain=createDataPartition(dat$classe,p=0.7,list=FALSE)
+training=dat[intrain,]
+testing=dat[-intrain,]
+```  
+
+* MODEL BUILDING
+
+*3-Model* So a **simple random forest model** will be enoguh to have a great accuracy
+
+Since the final test data are also extracted from the same dataset, the model will predict the classe correctly
+
+```{r eval=FALSE}
+trainctrl <- trainControl(number=10, verboseIter = TRUE)
+modfitRF=train(classe~.,data=training,method='rf', trControl = trainctrl) 
+```
+
+The accuracy in the test set or the **expected out of sample error for this model is 0.9929**
+
+*4-Model* Besides, due to the fact the final test are part of the same dataset, and that every window corresponds only to one kind of movemente, then, if we are **allowed to use all the predictors**, we can predict the result **just using the num_window with a k nearest neighbour model** for example
+```{r eval=FALSE}
+modfitRF=train(classe~num_window,data=training,method='knn',tuneLength = 1)
+```
+The accuracy in the test set or the **expected out of sample error for this model is 0.995**
+
